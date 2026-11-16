@@ -1,4 +1,4 @@
-//! FastScout hata katmanı. Tüm modüller `crate::error::Result` döner.
+//! FastScout error layer. Every module returns `crate::error::Result`.
 
 use anyhow::Context;
 
@@ -14,10 +14,10 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     fn scrape_context(self, url: &str) -> Result<T> {
-        self.with_context(|| format!("sayfa alınamadı: {url}"))
+        self.with_context(|| format!("failed to fetch page: {url}"))
     }
 
     fn db_context(self, action: &str) -> Result<T> {
-        self.with_context(|| format!("veritabanı hatası ({action})"))
+        self.with_context(|| format!("database error ({action})"))
     }
 }

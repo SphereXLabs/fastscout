@@ -12,7 +12,7 @@ pub async fn connect(database_path: &str) -> Result<SqlitePool> {
         .max_connections(5)
         .connect_with(options)
         .await
-        .db_context("bağlantı açma")?;
+        .db_context("open connection")?;
 
     sqlx::query(
         r#"
@@ -27,7 +27,7 @@ pub async fn connect(database_path: &str) -> Result<SqlitePool> {
     )
     .execute(&pool)
     .await
-    .db_context("şema oluşturma")?;
+    .db_context("create schema")?;
 
     Ok(pool)
 }
@@ -53,7 +53,7 @@ pub async fn save_page(
     .bind(body)
     .execute(pool)
     .await
-    .db_context("sayfa kaydı")?;
+    .db_context("save page")?;
 
     Ok(())
 }

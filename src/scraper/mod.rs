@@ -1,11 +1,23 @@
 use std::collections::HashSet;
+use std::sync::LazyLock;
+use std::time::Duration;
 
+use anyhow::Context;
+use futures_util::stream::{self, StreamExt};
 use scraper::{Html, Node, Selector};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{ErrorContext, Result};
 
-#[derive(Debug, Clone, Serialize)]
+const USER_AGENT: &str = concat!("FastScout/", env!("CARGO_PKG_VERSION"));
+
+static TITLE_SELECTOR: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("title").expect("valid CSS selector"));
+
+static LINK_SELECTOR: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("a[href]").expect("valid CSS selector"));
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Page {
     pub url: String,
     pub title: Option<String>,
@@ -13,15 +25,31 @@ pub struct Page {
     pub links: Vec<String>,
 }
 
-pub async fn fetch_page(url: &str) -> Result<Page> {
-    let target = reqwest::Url::parse(url).scrape_context(url)?;
+pub async fn fetch_pages(urls: &[String], concurrency: usize) -> Result<Vec<Page>> {
+    let client = http_client()?;
+    let limit = concurrency.max(1);
+    let results = stream::iter(urls.iter().cloned())
+        .map(|url| {
+            let client = client.clone();
+            async move { fetch_page_with(&client, &url).await }
+        })
+        .buffered(limit)
+        .collect::<Vec<_>>()
+        .await;
 
-    let client = reqwest::Client::builder()
-        .user_agent("FastScout/0.1")
-        .timeout(std::time::Duration::from_secs(30))
+    results.into_iter().collect()
+}
+
+fn http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(Duration::from_secs(30))
         .build()
-        .scrape_context(url)?;
+        .context("failed to build HTTP client")
+}
 
+async fn fetch_page_with(client: &reqwest::Client, url: &str) -> Result<Page> {
+    let target = reqwest::Url::parse(url).scrape_context(url)?;
     let response = client.get(target).send().await.scrape_context(url)?;
     let final_url = response.url().clone();
     let status = response.status();
@@ -41,9 +69,8 @@ pub async fn fetch_page(url: &str) -> Result<Page> {
 }
 
 fn extract_title(document: &Html) -> Option<String> {
-    let selector = Selector::parse("title").expect("geçerli seçici");
     document
-        .select(&selector)
+        .select(&TITLE_SELECTOR)
         .next()
         .map(|node| collapse_whitespace(&node.text().collect::<String>()))
         .filter(|title| !title.is_empty())
@@ -77,11 +104,10 @@ fn is_hidden(name: &str) -> bool {
 }
 
 fn extract_links(document: &Html, base: &reqwest::Url) -> Vec<String> {
-    let selector = Selector::parse("a[href]").expect("geçerli seçici");
     let mut seen = HashSet::new();
     let mut links = Vec::new();
 
-    for anchor in document.select(&selector) {
+    for anchor in document.select(&LINK_SELECTOR) {
         let Some(href) = anchor.value().attr("href") else {
             continue;
         };

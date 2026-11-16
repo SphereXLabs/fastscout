@@ -10,12 +10,13 @@
 
 ## ⚡ Key Features
 
-* **Asynchronous I/O:** `tokio` and `reqwest` fetch the page without blocking the runtime.
+* **Asynchronous I/O:** `tokio` and `reqwest` fetch pages without blocking the runtime.
+* **Concurrent fetches:** `--url` takes several pages and `--concurrency` caps how many run at once.
 * **Single binary:** `cargo build --release` produces one executable.
-* **DOM parsing:** `scraper` reads the title, skips `script` / `style` text, and collects absolute links.
+* **DOM parsing:** `scraper` reads the title, skips `head`, `script`, and `style` text, and collects absolute links.
 * **SQLite archive:** `sqlx` creates `pages` and upserts each URL with its title and body.
 * **Clear failures:** `anyhow` prints the error chain. HTTP errors and invalid URLs stop the process with a non-zero exit code.
-* **CLI output:** `clap` accepts `--url`, `--format`, and `--db`. Text mode is colorized with `colored`. JSON mode prints plain JSON so it can be piped.
+* **CLI output:** `clap` accepts `--url`, `--file`, `--format`, `--db`, `--concurrency`, and `--output`. Text mode is colorized with `colored`. JSON mode prints a JSON array so it can be piped.
 
 ---
 
@@ -24,6 +25,7 @@
 * **Language:** [Rust](https://www.rust-lang.org/) (Edition 2021)
 * **Async runtime:** `tokio`
 * **HTTP client:** `reqwest`
+* **Concurrency:** `futures-util`
 * **HTML parser:** `scraper`
 * **Database:** `sqlx` (SQLite)
 * **CLI parser:** `clap`
@@ -53,13 +55,13 @@ Install Rust and Cargo from [rustup.rs](https://rustup.rs/). On Windows, the SQL
 3. **Run the binary:**
 
    ```bash
-   ./target/release/fastscout --url "https://example.com" --format json
+   ./target/release/fastscout --url "https://example.com,https://www.rust-lang.org" --format json
    ```
 
    On Windows:
 
    ```powershell
-   .\target\release\fastscout.exe --url "https://example.com" --format json
+   .\target\release\fastscout.exe --url "https://example.com,https://www.rust-lang.org" --format json
    ```
 
 A successful run writes `fastscout.db` in the working directory. Pass `--db path\to\archive.db` to choose another file.
@@ -69,33 +71,41 @@ A successful run writes `fastscout.db` in the working directory. Pass `--db path
 ## 💡 Usage
 
 ```text
-fastscout --url <URL> --format <text|json> --db <PATH>
+fastscout --url <URL[,URL...]> --file <PATH> --format <text|json> --db <PATH> --concurrency <N> --output <PATH>
 ```
+
+Provide `--url`, `--file`, or both. `--url` splits on commas. `--file` reads one URL per line and ignores blank lines and `#` comments.
 
 | Flag | Required | Default | Purpose |
 | --- | --- | --- | --- |
-| `--url` | yes | — | Page to fetch |
+| `--url` | one of `--url` or `--file` | — | Page URLs, separated by commas |
+| `--file` | one of `--url` or `--file` | — | Text file of URLs |
 | `--format` | no | `text` | `text` for a colorized report, `json` for pretty JSON |
 | `--db` | no | `fastscout.db` | SQLite file |
+| `--concurrency` | no | `10` | Maximum pages fetched at the same time |
+| `--output` | no | — | Also write the pages to a JSON file |
 
-Text mode prints the URL, title, link count, each link, and the visible page text. JSON mode prints an object with `url`, `title`, `text`, and `links`.
+Text mode prints the URL, title, link count, each link, and the visible page text. JSON mode prints an array of objects with `url`, `title`, `text`, and `links`.
 
 ```bash
 cargo run -- --url "https://example.com" --format text
-cargo run -- --url "https://example.com" --format json
+cargo run -- --url "https://example.com,https://www.rust-lang.org" --concurrency 10 --format json
+cargo run -- --file urls.txt --output pages.json
 ```
 
 Example JSON shape:
 
 ```json
-{
-  "url": "https://example.com/",
-  "title": "Example Domain",
-  "text": "Example Domain\nThis domain is for use in documentation examples...",
-  "links": [
-    "https://iana.org/domains/example"
-  ]
-}
+[
+  {
+    "url": "https://example.com/",
+    "title": "Example Domain",
+    "text": "Example Domain\nThis domain is for use in documentation examples...",
+    "links": [
+      "https://iana.org/domains/example"
+    ]
+  }
+]
 ```
 
 The `pages` table stores `url` (unique), `title`, `body`, and `fetched_at`. Fetching the same URL again updates that row.
@@ -105,7 +115,7 @@ The `pages` table stores `url` (unique), `title`, `body`, and `fetched_at`. Fetc
 ## 🗺️ Roadmap
 
 - [x] SQLite persistence with `sqlx`
-- [ ] Fetch many URLs concurrently
+- [x] Fetch many URLs concurrently
 - [ ] Rate limiting and user-agent rotation
 - [ ] Export saved pages to CSV
 
