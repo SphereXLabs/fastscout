@@ -22,20 +22,21 @@ pub async fn fetch_page(url: &str) -> Result<Page> {
         .build()
         .scrape_context(url)?;
 
-    let response = client.get(target.clone()).send().await.scrape_context(url)?;
+    let response = client.get(target).send().await.scrape_context(url)?;
+    let final_url = response.url().clone();
     let status = response.status();
     if !status.is_success() {
-        anyhow::bail!("HTTP {status} — {url}");
+        anyhow::bail!("HTTP {status} — {final_url}");
     }
 
     let body = response.text().await.scrape_context(url)?;
     let document = Html::parse_document(&body);
 
     Ok(Page {
-        url: target.to_string(),
+        url: final_url.to_string(),
         title: extract_title(&document),
         text: visible_text(&document),
-        links: extract_links(&document, &target),
+        links: extract_links(&document, &final_url),
     })
 }
 
@@ -71,7 +72,7 @@ fn visible_text(document: &Html) -> String {
 fn is_hidden(name: &str) -> bool {
     matches!(
         name,
-        "script" | "style" | "noscript" | "template" | "svg"
+        "script" | "style" | "noscript" | "template" | "svg" | "head" | "title"
     )
 }
 
@@ -105,4 +106,33 @@ fn extract_links(document: &Html, base: &reqwest::Url) -> Vec<String> {
 
 fn collapse_whitespace(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_text_omits_head_and_keeps_title_separate() {
+        let document = Html::parse_document(
+            "<html><head><title>Başlık</title><meta name=\"d\" content=\"gizli\"><style>body{}</style></head><body><p>Görünen</p><script>alert(1)</script></body></html>",
+        );
+        assert_eq!(visible_text(&document), "Görünen");
+        assert_eq!(extract_title(&document).as_deref(), Some("Başlık"));
+    }
+
+    #[test]
+    fn extract_links_resolves_against_the_given_base() {
+        let document = Html::parse_document(
+            r##"<a href="/a">A</a><a href="b">B</a><a href="#x">C</a><a href="mailto:a@b.c">D</a>"##,
+        );
+        let base = reqwest::Url::parse("https://www.example.com/dir/page").unwrap();
+        assert_eq!(
+            extract_links(&document, &base),
+            vec![
+                "https://www.example.com/a".to_string(),
+                "https://www.example.com/dir/b".to_string(),
+            ]
+        );
+    }
 }
