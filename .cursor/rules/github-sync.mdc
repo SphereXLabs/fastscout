@@ -1,0 +1,15 @@
+---
+description: Her tamamlanan adımda değişiklikleri GitHub'a gönder
+alwaysApply: true
+---
+
+# GitHub paylaşımı
+
+Bir adım bittiğinde ve çalışma ağacında değişiklik varsa:
+
+1. `git status` ve `git diff` ile eklenen dosyalara bak. `.env`, kimlik bilgisi ve `*.db` dosyalarını ekleme.
+2. Değişiklikleri kısa bir mesajla commit et.
+3. `main` dalını mevcut `origin` uzak deposuna push et.
+4. Kullanıcıya depo adresini yaz.
+
+Force push yapma. `origin` yoksa yeni depo açmadan önce kullanıcıya sor.
